@@ -1,64 +1,107 @@
-import type { Playlist, PlaylistRequest, Song } from "../types/playlist";
+import type {
+  GeneratedPlaylist,
+  PlaylistRequest,
+} from "@/types/playlist";
 
-export const moodOptions: Array<{
-  value: PlaylistRequest["mood"];
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "focus",
-    label: "Focus",
-    description: "Clean, steady songs for deep work.",
-  },
-  {
-    value: "lift",
-    label: "Lift",
-    description: "Bright momentum for getting unstuck.",
-  },
-  {
-    value: "late-night",
-    label: "Late Night",
-    description: "Warm, low-light tracks with space.",
-  },
-  {
-    value: "reset",
-    label: "Reset",
-    description: "A calm sequence to clear the head.",
-  },
-  {
-    value: "hype",
-    label: "Hype",
-    description: "Sharp beats for high-energy moments.",
-  },
-];
-
-export const sampleRequest: PlaylistRequest = {
-  mood: "focus",
-  energy: 62,
-  activity: "writing sprint",
-  songCount: 8,
-  notes: "Keep it clean, no vocals that pull attention away.",
+export const defaultPlaylistRequest: PlaylistRequest = {
+  prompt:
+    "I am going on a late-night drive and want something atmospheric, energetic, and current without feeling repetitive.",
+  artists: [
+    "Travis Scott",
+    "Drake",
+    "Metro Boomin",
+  ],
+  genres: [
+    "Hip Hop",
+    "Trap",
+    "Alternative R&B",
+  ],
+  playlistLength: 20,
+  isPublic: false,
 };
 
-export const songLibrary: Song[] = [
-  { title: "Glass Horizon", artist: "Northbound", duration: "3:42", genre: "ambient pop" },
-  { title: "Quiet Voltage", artist: "Luma Arc", duration: "4:08", genre: "downtempo" },
-  { title: "Night Circuit", artist: "Soft Static", duration: "3:21", genre: "electronica" },
-  { title: "Blue Current", artist: "Monument Run", duration: "4:15", genre: "indie electronic" },
-  { title: "Second Wind", artist: "Aster Field", duration: "3:57", genre: "alt pop" },
-  { title: "Warm Static", artist: "Cinder & Coast", duration: "2:58", genre: "lo-fi" },
-  { title: "Pulse Window", artist: "Arc Index", duration: "3:36", genre: "synthwave" },
-  { title: "Paper Skies", artist: "Vanta June", duration: "4:03", genre: "dream pop" },
-  { title: "Afterglow Loop", artist: "Rift Motel", duration: "3:29", genre: "chillwave" },
-  { title: "Signal Bloom", artist: "Nova Drift", duration: "4:11", genre: "future garage" },
-];
-
-export const samplePlaylist: Playlist = {
-  title: "Focused Momentum",
-  summary:
-    "A balanced set of low-friction tracks built to keep the room steady and the ideas moving.",
-  vibe: ["steady", "clear", "minimal vocals", "forward motion"],
-  songs: songLibrary.slice(0, 8),
-  createdAt: "Today, 9:42 AM",
-  request: sampleRequest,
+export const mockGeneratedPlaylist: GeneratedPlaylist = {
+  id: "mock-playlist-001",
+  name: "Neon After Hours",
+  description:
+    "A late-night mix of atmospheric trap, melodic rap, and smooth alternative R&B built for city lights and empty highways.",
+  imageUrl:
+    "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1200&q=80",
+  spotifyUrl:
+    "https://open.spotify.com/",
+  isPublic: false,
+  scores: {
+    spotifyMatch: 1,
+    duplicateScore: 1,
+    playlistLength: 1,
+    matchConfidence: 0.95,
+  },
+  songs: [
+    {
+      id: "song-001",
+      title: "MY EYES",
+      artist: "Travis Scott",
+      album: "UTOPIA",
+      duration: "4:11",
+      imageUrl:
+        "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=400&q=80",
+      spotifyUrl:
+        "https://open.spotify.com/",
+    },
+    {
+      id: "song-002",
+      title: "Marvins Room",
+      artist: "Drake",
+      album: "Take Care",
+      duration: "5:47",
+      imageUrl:
+        "https://images.unsplash.com/photo-1494232410401-ad00d5433cfa?auto=format&fit=crop&w=400&q=80",
+      spotifyUrl:
+        "https://open.spotify.com/",
+    },
+    {
+      id: "song-003",
+      title: "Raindrops (Insane)",
+      artist: "Metro Boomin",
+      album: "HEROES & VILLAINS",
+      duration: "3:08",
+      imageUrl:
+        "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=400&q=80",
+      spotifyUrl:
+        "https://open.spotify.com/",
+    },
+    {
+      id: "song-004",
+      title: "Too Many Nights",
+      artist: "Metro Boomin",
+      album: "HEROES & VILLAINS",
+      duration: "3:20",
+      imageUrl:
+        "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=400&q=80",
+      spotifyUrl:
+        "https://open.spotify.com/",
+    },
+    {
+      id: "song-005",
+      title: "ASTROTHUNDER",
+      artist: "Travis Scott",
+      album: "ASTROWORLD",
+      duration: "2:22",
+      imageUrl:
+        "https://images.unsplash.com/photo-1524650359799-842906ca1c06?auto=format&fit=crop&w=400&q=80",
+      spotifyUrl:
+        "https://open.spotify.com/",
+    },
+    {
+      id: "song-006",
+      title: "Feel No Ways",
+      artist: "Drake",
+      album: "Views",
+      duration: "4:00",
+      imageUrl:
+        "https://images.unsplash.com/photo-1460036521480-ff49c08c2781?auto=format&fit=crop&w=400&q=80",
+      spotifyUrl:
+        "https://open.spotify.com/",
+    },
+  ],
 };
