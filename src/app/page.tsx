@@ -59,13 +59,8 @@ export default function HomePage() {
   }, [viewState]);
 
   function handleSubmit(
-    request: PlaylistRequest,
+    _request: PlaylistRequest,
   ) {
-    console.log(
-      "Playlist request:",
-      request,
-    );
-
     setCurrentStep(1);
     setPlaylist(null);
     setViewState("generating");
