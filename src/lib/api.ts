@@ -1,56 +1,106 @@
-import type { Playlist, PlaylistRequest, Song } from "../types/playlist";
-import { songLibrary } from "./mock-data";
+import { API_URL, USE_MOCK_API } from "@/lib/config";
+import { mockGeneratedPlaylist } from "@/lib/mock-data";
+import type {
+  GeneratePlaylistResponse,
+  GeneratedPlaylist,
+  PlaylistRequest,
+} from "@/types/playlist";
 
-const sleep = (milliseconds: number) =>
-  new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
-
-function buildPlaylistTitle(request: PlaylistRequest) {
-  switch (request.mood) {
-    case "lift":
-      return "Bright Lift Mix";
-    case "late-night":
-      return "Late Night Drift";
-    case "reset":
-      return "Reset Sequence";
-    case "hype":
-      return "High Gear Run";
-    default:
-      return "Focused Momentum";
-  }
-}
-
-function buildVibe(request: PlaylistRequest) {
-  const vibe = [request.mood.replace("-", " "), request.activity, `${request.energy}% energy`];
-  if (request.notes.trim()) {
-    vibe.push(request.notes.trim().slice(0, 24));
-  }
-
-  return vibe;
-}
-
-function pickSongs(count: number, energy: number): Song[] {
-  const offset = energy > 70 ? 3 : energy < 40 ? 1 : 0;
-  const rotated = [...songLibrary.slice(offset), ...songLibrary.slice(0, offset)];
-  return rotated.slice(0, Math.max(3, Math.min(count, songLibrary.length)));
-}
+const MOCK_GENERATION_DELAY_MS = 4000;
 
 export async function generatePlaylist(
   request: PlaylistRequest,
-): Promise<Playlist> {
-  await sleep(650);
+): Promise<GeneratedPlaylist> {
+  const response = USE_MOCK_API
+    ? await generateMockPlaylist(request)
+    : await generateRealPlaylist(request);
+
+  return response.playlist;
+}
+
+export async function checkApiHealth(): Promise<boolean> {
+  if (USE_MOCK_API) {
+    return true;
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/api/health`, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function generateMockPlaylist(
+  request: PlaylistRequest,
+): Promise<GeneratePlaylistResponse> {
+  await delay(MOCK_GENERATION_DELAY_MS);
 
   return {
-    title: buildPlaylistTitle(request),
-    summary:
-      "A quick mock generation pass that returns a playlist shaped by the selected mood, pace, and activity.",
-    vibe: buildVibe(request),
-    songs: pickSongs(request.songCount, request.energy),
-    createdAt: new Date().toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    }),
-    request,
+    playlist: {
+      ...mockGeneratedPlaylist,
+      isPublic: request.isPublic,
+    },
+    published: true,
+    provider: "openrouter",
+    model: "nvidia/nemotron-3-ultra-550b-a55b:free",
+    promptVersion: "playlist-generation-v2",
   };
+}
+
+async function generateRealPlaylist(
+  request: PlaylistRequest,
+): Promise<GeneratePlaylistResponse> {
+  const response = await fetch(
+    `${API_URL}/api/playlists/generate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: request.prompt,
+        artists: request.artists,
+        genres: request.genres,
+        playlist_length: request.playlistLength,
+        is_public: request.isPublic,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const message = await readErrorMessage(response);
+
+    throw new Error(
+      message ||
+        `Playlist generation failed with status ${response.status}.`,
+    );
+  }
+
+  return response.json() as Promise<GeneratePlaylistResponse>;
+}
+
+async function readErrorMessage(
+  response: Response,
+): Promise<string> {
+  try {
+    const data = (await response.json()) as {
+      detail?: string;
+      message?: string;
+    };
+
+    return data.detail ?? data.message ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
 }

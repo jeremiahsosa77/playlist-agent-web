@@ -33,3 +33,11 @@ export type GeneratedPlaylist = {
   songs: Song[];
   scores: PlaylistScores;
 };
+
+export type GeneratePlaylistResponse = {
+  playlist: GeneratedPlaylist;
+  published: boolean;
+  provider: string;
+  model: string;
+  promptVersion: string;
+};
