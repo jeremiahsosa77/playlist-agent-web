@@ -1,32 +1,35 @@
-export type PlaylistMood =
-  | "focus"
-  | "lift"
-  | "late-night"
-  | "reset"
-  | "hype";
+export type PlaylistRequest = {
+  prompt: string;
+  artists: string[];
+  genres: string[];
+  playlistLength: number;
+  isPublic: boolean;
+};
 
-export type GenerationState = "idle" | "loading" | "ready" | "error";
-
-export interface PlaylistRequest {
-  mood: PlaylistMood;
-  energy: number;
-  activity: string;
-  songCount: number;
-  notes: string;
-}
-
-export interface Song {
+export type Song = {
+  id: string;
   title: string;
   artist: string;
+  album: string;
   duration: string;
-  genre: string;
-}
+  imageUrl: string;
+  spotifyUrl: string;
+};
 
-export interface Playlist {
-  title: string;
-  summary: string;
-  vibe: string[];
+export type PlaylistScores = {
+  spotifyMatch: number;
+  duplicateScore: number;
+  playlistLength: number;
+  matchConfidence: number;
+};
+
+export type GeneratedPlaylist = {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  spotifyUrl: string;
+  isPublic: boolean;
   songs: Song[];
-  createdAt: string;
-  request: PlaylistRequest;
-}
+  scores: PlaylistScores;
+};
