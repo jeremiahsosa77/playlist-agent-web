@@ -30,6 +30,12 @@ export const mockGeneratedPlaylist: GeneratedPlaylist = {
   spotifyUrl:
     "https://open.spotify.com/",
   isPublic: false,
+  published: true,
+  passedQualityGate: true,
+  provider: "openrouter",
+  model:
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+  promptVersion: "playlist-generation-v2",
   scores: {
     spotifyMatch: 1,
     duplicateScore: 1,
