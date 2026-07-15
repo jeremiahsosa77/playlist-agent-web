@@ -2,18 +2,29 @@
 
 import {
   type FormEvent,
+  useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 
 import ChatMessage from "@/components/chat-message";
-import { mockFollowUpQuestions } from "@/lib/mock-conversation";
+import {
+  cancelInterview,
+  createInterview,
+  InterviewApiError,
+  submitInterviewMessage,
+} from "@/lib/interview-api";
 import type {
   ConversationMessage,
-  ConversationQuestion,
 } from "@/types/conversation";
-import type { PlaylistRequest } from "@/types/playlist";
+import type {
+  InterviewMessage,
+  InterviewSession,
+} from "@/types/interview";
+import type {
+  PlaylistRequest,
+} from "@/types/playlist";
 
 type PlaylistInterviewProps = {
   onComplete: (request: PlaylistRequest) => void;
@@ -31,71 +42,83 @@ const initialMessages: ConversationMessage[] = [
 export default function PlaylistInterview({
   onComplete,
 }: PlaylistInterviewProps) {
-  const messageIdRef = useRef(0);
+  const messagesEndRef =
+    useRef<HTMLDivElement | null>(null);
 
-  const [messages, setMessages] =
-    useState<ConversationMessage[]>(initialMessages);
+  const [session, setSession] =
+    useState<InterviewSession | null>(null);
 
   const [initialRequest, setInitialRequest] =
     useState("");
 
-  const [answers, setAnswers] =
-    useState<Record<string, string>>({});
-
-  const [
-    currentQuestionIndex,
-    setCurrentQuestionIndex,
-  ] = useState(-1);
-
-  const [textAnswer, setTextAnswer] =
+  const [answer, setAnswer] =
     useState("");
 
-  const [error, setError] = useState("");
+  const [isStarting, setIsStarting] =
+    useState(false);
 
-  const currentQuestion: ConversationQuestion | null =
-    currentQuestionIndex >= 0
-      ? mockFollowUpQuestions[
-          currentQuestionIndex
-        ] ?? null
-      : null;
+  const [isSubmitting, setIsSubmitting] =
+    useState(false);
 
-  const isComplete =
-    currentQuestionIndex >=
-    mockFollowUpQuestions.length;
+  const [isResetting, setIsResetting] =
+    useState(false);
 
-  const summary = useMemo(() => {
-    if (!isComplete) {
-      return null;
-    }
+  const [error, setError] =
+    useState("");
 
-    return {
-      prompt: initialRequest,
-      artists: [],
-      genres: [],
-      playlistLength: 20,
-      isPublic: false,
-    } satisfies PlaylistRequest;
-  }, [initialRequest, isComplete]);
+  const displayedMessages =
+    useMemo<ConversationMessage[]>(() => {
+      if (!session) {
+        return initialMessages;
+      }
 
-  function createMessageId(prefix: string): string {
-    messageIdRef.current += 1;
+      return session.messages
+        .filter(
+          (message) =>
+            message.role !== "system",
+        )
+        .map(convertInterviewMessage);
+    }, [session]);
 
-    return `${prefix}-${messageIdRef.current}`;
-  }
+  const isReady =
+    session?.status ===
+    "ready_to_generate";
 
-  function addMessage(
-    message: ConversationMessage,
-  ) {
-    setMessages((current) => [
-      ...current,
-      message,
-    ]);
-  }
+  const isBusy =
+    isStarting ||
+    isSubmitting ||
+    isResetting;
 
-  function beginInterview(
+  const transcript =
+    useMemo(() => {
+      if (!session || !isReady) {
+        return "";
+      }
+
+      return createGenerationPrompt(
+        session.messages,
+      );
+    }, [session, isReady]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }, [
+    displayedMessages,
+    isStarting,
+    isSubmitting,
+  ]);
+
+  async function beginInterview(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
+
+    if (isBusy) {
+      return;
+    }
 
     const trimmedRequest =
       initialRequest.trim();
@@ -108,60 +131,44 @@ export default function PlaylistInterview({
     }
 
     setError("");
+    setIsStarting(true);
 
-    addMessage({
-      id: createMessageId("user-initial"),
-      role: "user",
-      content: trimmedRequest,
-    });
+    try {
+      const created =
+        await createInterview();
 
-    addMessage({
-      id: createMessageId(
-        "agent-question-0",
-      ),
-      role: "agent",
-      content:
-        mockFollowUpQuestions[0].prompt,
-    });
+      const response =
+        await submitInterviewMessage(
+          created.session.id,
+          trimmedRequest,
+        );
 
-    setCurrentQuestionIndex(0);
-  }
-
-  function handleOptionAnswer(
-    value: string,
-    label: string,
-  ) {
-    if (!currentQuestion) {
-      return;
+      setSession(response.session);
+      setInitialRequest("");
+    } catch (caughtError) {
+      setError(
+        getErrorMessage(caughtError),
+      );
+    } finally {
+      setIsStarting(false);
     }
-
-    setAnswers((current) => ({
-      ...current,
-      [currentQuestion.id]: value,
-    }));
-
-    addMessage({
-      id: createMessageId(
-        `user-${currentQuestion.id}`,
-      ),
-      role: "user",
-      content: label,
-    });
-
-    moveToNextQuestion();
   }
 
-  function handleTextAnswer(
+  async function handleAnswer(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
-    if (!currentQuestion) {
+    if (
+      !session ||
+      isBusy ||
+      isReady
+    ) {
       return;
     }
 
     const trimmedAnswer =
-      textAnswer.trim();
+      answer.trim();
 
     if (!trimmedAnswer) {
       setError(
@@ -171,101 +178,68 @@ export default function PlaylistInterview({
     }
 
     setError("");
+    setIsSubmitting(true);
 
-    setAnswers((current) => ({
-      ...current,
-      [currentQuestion.id]:
-        trimmedAnswer,
-    }));
+    try {
+      const response =
+        await submitInterviewMessage(
+          session.id,
+          trimmedAnswer,
+        );
 
-    addMessage({
-      id: createMessageId(
-        `user-${currentQuestion.id}`,
-      ),
-      role: "user",
-      content: trimmedAnswer,
-    });
-
-    setTextAnswer("");
-    moveToNextQuestion();
+      setSession(response.session);
+      setAnswer("");
+    } catch (caughtError) {
+      setError(
+        getErrorMessage(caughtError),
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  function moveToNextQuestion() {
-    const nextIndex =
-      currentQuestionIndex + 1;
-
-    if (
-      nextIndex <
-      mockFollowUpQuestions.length
-    ) {
-      window.setTimeout(() => {
-        addMessage({
-          id: createMessageId(
-            `agent-question-${nextIndex}`,
-          ),
-          role: "agent",
-          content:
-            mockFollowUpQuestions[
-              nextIndex
-            ].prompt,
-        });
-
-        setCurrentQuestionIndex(
-          nextIndex,
-        );
-      }, 350);
-
+  async function handleReset() {
+    if (isBusy) {
       return;
     }
 
-    window.setTimeout(() => {
-      addMessage({
-        id: createMessageId(
-          "agent-summary",
-        ),
-        role: "agent",
-        content:
-          "Perfect. I have enough to build the playlist. Review the summary below, then I’ll start curating.",
-      });
+    const sessionId = session?.id;
 
-      setCurrentQuestionIndex(
-        mockFollowUpQuestions.length,
-      );
-    }, 350);
+    setIsResetting(true);
+    setError("");
+
+    try {
+      if (sessionId) {
+        await cancelInterview(sessionId);
+      }
+    } catch {
+      // Reset the local interface even if the temporary
+      // backend session can no longer be found.
+    } finally {
+      setSession(null);
+      setInitialRequest("");
+      setAnswer("");
+      setError("");
+      setIsResetting(false);
+    }
   }
 
   function handleGenerate() {
-    if (!summary) {
+    if (
+      !session ||
+      !isReady ||
+      !transcript
+    ) {
       return;
     }
 
     onComplete({
-      ...summary,
-      prompt: [
-        summary.prompt,
-        answers.energy
-          ? `Energy preference: ${answers.energy}.`
-          : "",
-        answers.familiarity
-          ? `Song familiarity preference: ${answers.familiarity}.`
-          : "",
-        answers.avoid
-          ? `Avoid: ${answers.avoid}.`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" "),
+      prompt: transcript,
+      artists: [],
+      genres: [],
+      playlistLength: 20,
+      isPublic: false,
     });
-  }
-
-  function handleReset() {
-    messageIdRef.current = 0;
-    setMessages(initialMessages);
-    setInitialRequest("");
-    setAnswers({});
-    setCurrentQuestionIndex(-1);
-    setTextAnswer("");
-    setError("");
   }
 
   return (
@@ -277,37 +251,64 @@ export default function PlaylistInterview({
           </p>
 
           <h2 className="mt-2 text-2xl font-semibold text-white">
-            Let’s understand the moment
+            Let&apos;s understand the moment
           </h2>
 
           <p className="mt-2 max-w-xl text-sm leading-6 text-white/45">
-            Playlist Agent will ask a
-            few short questions before
-            generating anything.
+            Playlist Agent will ask
+            adaptive questions based on
+            what matters for your
+            playlist.
           </p>
         </div>
 
-        {currentQuestionIndex >= 0 ? (
+        {session ? (
           <button
             type="button"
             onClick={handleReset}
-            className="rounded-full border border-white/10 bg-black/20 px-3 py-2 text-xs font-medium text-white/55 transition hover:bg-white/10"
+            disabled={isBusy}
+            className="rounded-full border border-white/10 bg-black/20 px-3 py-2 text-xs font-medium text-white/55 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Start over
+            {isResetting
+              ? "Resetting..."
+              : "Start over"}
           </button>
         ) : null}
       </div>
 
-      <div className="mt-8 max-h-[430px] space-y-4 overflow-y-auto pr-1">
-        {messages.map((message) => (
-          <ChatMessage
-            key={message.id}
-            message={message}
-          />
-        ))}
+      <div
+        className="mt-8 max-h-[430px] space-y-4 overflow-y-auto pr-1"
+        aria-live="polite"
+      >
+        {displayedMessages.map(
+          (message) => (
+            <ChatMessage
+              key={message.id}
+              message={message}
+            />
+          ),
+        )}
+
+        {isStarting ? (
+          <StatusMessage>
+            Connecting to the playlist
+            service and starting your
+            interview...
+          </StatusMessage>
+        ) : null}
+
+        {isSubmitting ? (
+          <StatusMessage>
+            Playlist Agent is thinking
+            about the best question to
+            ask next...
+          </StatusMessage>
+        ) : null}
+
+        <div ref={messagesEndRef} />
       </div>
 
-      {currentQuestionIndex === -1 ? (
+      {!session ? (
         <form
           onSubmit={beginInterview}
           className="mt-6"
@@ -319,116 +320,97 @@ export default function PlaylistInterview({
                 event.target.value,
               )
             }
+            disabled={isBusy}
             rows={5}
             placeholder="I’m going on a date tonight and want something romantic, modern, and interesting without feeling too slow..."
-            className="w-full resize-none rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-white/30 focus:bg-black/30"
+            className="w-full resize-none rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-white/30 focus:bg-black/30 disabled:cursor-not-allowed disabled:opacity-60"
           />
 
           {error ? (
-            <p className="mt-3 text-sm text-red-200">
-              {error}
-            </p>
+            <ErrorMessage message={error} />
           ) : null}
 
           <button
             type="submit"
-            className="mt-4 w-full rounded-2xl bg-white px-5 py-4 text-sm font-semibold text-black transition hover:bg-white/90"
+            disabled={isBusy}
+            className="mt-4 w-full rounded-2xl bg-white px-5 py-4 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Start interview
+            {isStarting
+              ? "Starting interview..."
+              : "Start interview"}
           </button>
         </form>
       ) : null}
 
-      {currentQuestion?.options ? (
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          {currentQuestion.options.map(
-            (option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() =>
-                  handleOptionAnswer(
-                    option.value,
-                    option.label,
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm font-medium text-white transition hover:border-white/25 hover:bg-white/10"
-              >
-                {option.label}
-              </button>
-            ),
-          )}
-        </div>
-      ) : null}
-
-      {currentQuestion &&
-      !currentQuestion.options ? (
+      {session && !isReady ? (
         <form
-          onSubmit={handleTextAnswer}
+          onSubmit={handleAnswer}
           className="mt-6"
         >
-          <input
-            type="text"
-            value={textAnswer}
+          <textarea
+            value={answer}
             onChange={(event) =>
-              setTextAnswer(
+              setAnswer(
                 event.target.value,
               )
             }
-            placeholder={
-              currentQuestion.placeholder
-            }
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-white/30 focus:bg-black/30"
+            disabled={isBusy}
+            rows={3}
+            placeholder="Type your answer..."
+            className="w-full resize-none rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-white/30 focus:bg-black/30 disabled:cursor-not-allowed disabled:opacity-60"
           />
 
           {error ? (
-            <p className="mt-3 text-sm text-red-200">
-              {error}
-            </p>
+            <ErrorMessage message={error} />
           ) : null}
 
           <button
             type="submit"
-            className="mt-4 w-full rounded-2xl bg-white px-5 py-4 text-sm font-semibold text-black transition hover:bg-white/90"
+            disabled={isBusy}
+            className="mt-4 w-full rounded-2xl bg-white px-5 py-4 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Continue
+            {isSubmitting
+              ? "Thinking..."
+              : "Continue"}
           </button>
         </form>
       ) : null}
 
-      {isComplete && summary ? (
+      {session &&
+      isReady &&
+      transcript ? (
         <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/35">
-            Playlist brief
+            Playlist brief ready
           </p>
 
           <p className="mt-3 text-sm leading-6 text-white/70">
-            {initialRequest}
+            Playlist Agent has enough
+            information to curate your
+            playlist.
           </p>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            {answers.energy ? (
-              <SummaryTag
-                label={`Energy: ${answers.energy}`}
-              />
-            ) : null}
+            <SummaryTag
+              label={`${session.userMessageCount} answers`}
+            />
 
-            {answers.familiarity ? (
-              <SummaryTag
-                label={
-                  answers.familiarity
-                }
-              />
-            ) : null}
+            <SummaryTag
+              label={`${session.questionCount} questions`}
+            />
 
-            {answers.avoid ? (
-              <SummaryTag
-                label={`Avoid: ${answers.avoid}`}
-              />
-            ) : null}
+            <SummaryTag
+              label="20 songs"
+            />
 
-            <SummaryTag label="20 songs" />
+            <SummaryTag
+              label="Private playlist"
+            />
           </div>
+
+          {error ? (
+            <ErrorMessage message={error} />
+          ) : null}
 
           <button
             type="button"
@@ -440,6 +422,93 @@ export default function PlaylistInterview({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function convertInterviewMessage(
+  message: InterviewMessage,
+): ConversationMessage {
+  return {
+    id: message.id,
+    role:
+      message.role === "assistant"
+        ? "agent"
+        : "user",
+    content: message.content,
+  };
+}
+
+function createGenerationPrompt(
+  messages: InterviewMessage[],
+): string {
+  const transcript = messages
+    .filter(
+      (message) =>
+        message.role !== "system",
+    )
+    .map((message) => {
+      const speaker =
+        message.role === "assistant"
+          ? "Music curator"
+          : "User";
+
+      return `${speaker}: ${message.content}`;
+    })
+    .join("\n");
+
+  return [
+    "Create a Spotify playlist based on this completed music interview.",
+    "",
+    transcript,
+    "",
+    "Use the entire interview to understand the desired setting, mood, energy, familiarity, musical direction, and anything the user wants avoided.",
+  ].join("\n");
+}
+
+function getErrorMessage(
+  error: unknown,
+): string {
+  if (error instanceof InterviewApiError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Something went wrong while running the playlist interview.";
+}
+
+type StatusMessageProps = {
+  children: React.ReactNode;
+};
+
+function StatusMessage({
+  children,
+}: StatusMessageProps) {
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-white/10 bg-white/5 px-4 py-3 text-sm leading-6 text-white/45">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+type ErrorMessageProps = {
+  message: string;
+};
+
+function ErrorMessage({
+  message,
+}: ErrorMessageProps) {
+  return (
+    <p
+      role="alert"
+      className="mt-3 text-sm text-red-200"
+    >
+      {message}
+    </p>
   );
 }
 
